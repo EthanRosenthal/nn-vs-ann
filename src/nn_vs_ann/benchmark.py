@@ -6,6 +6,7 @@ import numba
 import numpy as np
 import numpy.typing as npt
 import pandas as pd
+from sklearn.neighbors import KNeighborsClassifier
 
 from nn_vs_ann import ROOT
 
@@ -76,6 +77,13 @@ def topk(
     indices = np.argpartition(-sim, kth=k)[:k]
     top_indices = np.argsort(-sim[indices])
     return indices[top_indices], sim[top_indices]
+
+
+def knn(
+    vec: npt.NDArray[np.float32], clf
+) -> tuple[npt.NDArray[np.int32], npt.NDArray[np.float32]]:
+    sims, indices = clf.kneighbors(vec.reshape(1, -1))
+    return indices, sims
 
 
 @numba.njit("float32[:,:](int_, int_)", parallel=True)
@@ -210,6 +218,38 @@ def main(
         print(json.dumps(results[-1], indent=2))
 
         print("Done numpy.")
+
+        #################################################
+        #                 KNN                           #
+        #################################################
+
+        print("Starting KNN trials...")
+
+        t0 = time.time()
+        clf = KNeighborsClassifier(n_neighbors=k, n_jobs=-1)
+        clf.fit(data, np.arange(len(data)))
+        t1 = time.time()
+        print(f"Took {t1 - t0:.3f}s to build KNN.")
+        times = []
+        for i in range(num_trials):
+            t0 = time.time()
+            knn(data[i], clf)
+            t1 = time.time()
+            times.append(t1 - t0)
+
+        results.append(
+            {
+                "num_embeddings": num_embeddings,
+                "num_dims": num_dims,
+                "lib": "knn",
+                "k": k,
+                "avg_time": np.mean(times),
+                "stddev_time": np.std(times),
+            }
+        )
+        print(json.dumps(results[-1], indent=2))
+
+        print("Done KNN.")
 
     results = pd.DataFrame(results)
     return results
